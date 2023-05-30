@@ -1,5 +1,5 @@
 import torch
-import torch.nn as nn
+import torch.nn as nn  # importing pytorch NN module for reproducibility
 from torch.nn import functional as F
 
 # hyperparameters
@@ -57,11 +57,12 @@ val_data = data[
 # Output:  tensor([18, 47, 56, 57, 58, 1, 15, 47, 58]) # What this means is:
 # In the context of 18, 47 comes next. In the context of 18 and 47, 56 comes next. AND SO ON.
 
+# get batch for any arbitrary split
 def get_batch(split):
     # generate a small batch of data of inputs x and y
-    data = train_data if split == 'train' else val_data
-    ix = torch.randint(len(data) - block_size, (batch_size,))
-    x = torch.stack([data[i:i + block_size] for i in ix])
+    data = train_data if split == 'train' else val_data  # if split is training split then look at train_data otherwise val_data. That get sus the data array
+    ix = torch.randint(len(data) - block_size, (batch_size,))  # ix is going to be 4 random generated numbers
+    x = torch.stack([data[i:i + block_size] for i in ix])  # first block_size characters, starting at i
     y = torch.stack([data[i + 1:i + block_size + 1] for i in ix])  # stacking in a 4 x 8 row
     return x, y
 
@@ -81,18 +82,17 @@ def estimate_loss():
     return out
 
 
-# now that the batch of input is done that we want to feed into a transformer
+# now that the batch of input is done that we want to feed into a neural network. In this case we will use the simplest language model being the Bigram language model
 # we can now feed the data into neural networks - simplest one bigram language model
-# importing pytorch NN module for reproducibility
-
-
-# super simple bigram model
-class BigramLanguageModel(nn.Module):
+# super simple bigram language model
+class BigramLanguageModel(nn.Module):  # here we are constructing a bigram language model, which is a class of nn.module
 
     def __init__(self, vocab_size):
         super().__init__()
         # each token directly reads off the logits for the next token from a lookup table
-        self.token_embedding_table = nn.Embedding(vocab_size, vocab_size)
+        # here in the constructor: we are creating a token embedding table of size vocabsize * vocabsize
+        self.token_embedding_table = nn.Embedding(vocab_size,
+                                                  vocab_size)  # here we are using a nn.embedding which is basically a very thin wrapper around a tensor of a shape vocabsize * vocabsize
 
     def forward(self, idx, targets=None):
 

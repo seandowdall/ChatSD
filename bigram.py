@@ -1,4 +1,3 @@
-import requests
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
@@ -21,29 +20,42 @@ with open('input.txt', 'r', encoding='utf-8') as f:
     text = f.read()
 
 # here are all the unique characters that occur in this text
-chars = sorted(list(set(text)))
-vocab_size = len(chars)
+chars = sorted(list(
+    set(text)))  # TEXT is a sequence of characters in python, when you call set constructor on it, you get set of all characters that occur in the text, then you call list on that, so you have a list of charcaters with an ordering, then you sort that
+vocab_size = len(chars)  # no of characters is our vocab size, possible elements of our sequences
 # this above is our vocabulary
+
 # next we would like to create strategy to tokenize the input text, converting text to sequence of integers
 # as this is a character based language model we will be simply turning characters into integers
 # create mapping from characters to integers
+# when people say tokenize, they mean convert the raw text as a string to some sequence of integers
 stoi = {ch: i for i, ch in enumerate(chars)}
 itos = {i: ch for i, ch in enumerate(chars)}
 encode = lambda s: [stoi[c] for c in s]  # encoder: take string and output list of integers
 decode = lambda l: ''.join([itos[i] for i in l])  # decoder: take a list of ints and outputs a string
+# we are keeping the tokenizer very simple here and thus are using a character level tokenizer
+# very simple code books, encoder and decoder, but we do get a long sequence as a result e.g. hii there [46, 47, 47, 1, etc etc]
 
 # now let's encode the entire text dataset and store it into a torch.tensor
 # we use pytorch
-data = torch.tensor(encode(text), dtype=torch.long)
+data = torch.tensor(encode(text),
+                    dtype=torch.long)  # take all text in tini shakespeare, encode it and wrap it in torch.tensor to get the data tensor.
+
 # let's now split up the data into train and validation sets
 n = int(0.9 * len(data))  # first 90% is for training and the final 10% is for validation
 train_data = data[:n]
-val_data = data[n:]
+val_data = data[
+           n:]  # This will prevent perfect memorisation of the exact shakespeare, instead our model should be able to produce shakespeare like text
 
 
 # we don't feed all the text into transformer at once, computationally expensive & prohibitive
 # instead when training a transformer on these datasets we only work with chunks of the dataset
 # we sample random chunks from the training set and train them chunks at a time
+# these chunks have a maximum length (block_size)
+# EXAMPLE: block_size = 8
+#          train_data[:block_size+1]
+# Output:  tensor([18, 47, 56, 57, 58, 1, 15, 47, 58]) # What this means is:
+# In the context of 18, 47 comes next. In the context of 18 and 47, 56 comes next. AND SO ON.
 
 def get_batch(split):
     # generate a small batch of data of inputs x and y
@@ -138,3 +150,16 @@ for iter in range(max_iters):
 # generate from the model
 context = torch.zeros((1, 1), dtype=torch.long, device=device)
 print(decode(m.generate(context, max_new_tokens=500)[0].tolist()))
+
+# The Mathematical trick in self-Attention
+torch.manual_seed(1337)
+B, T, C = 4, 8, 2  # BATCH, TIME, CHANNEL
+x = torch.randn(B, T, C)
+x.shape
+
+# we want x[b,t] = mean_{i<=t} x[b, i]
+xbow = torch.zeros((B, T, C))
+for b in range(B):
+    for t in range(T):
+        xprev = x[b, :t + 1]  # (t,C)
+        xbow[b, t] = torch.mean(xprev, 0)  # XBOW = x bag of words

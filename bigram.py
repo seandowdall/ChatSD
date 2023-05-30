@@ -1,29 +1,29 @@
 import requests
-from torch import tensor
+import torch
+import torch.nn as nn
+from torch.nn import functional as F
 
-url = "https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt"
-output_file = "input.txt"
-response = requests.get(url)
-response.raise_for_status()  # Check for any errors during the request
-with open(output_file, "wb") as file:
-    file.write(response.content)
-print("File downloaded successfully.")
+# hyperparameters
+batch_size = 32  # how many independent sequences will we process in parallel?
+block_size = 8  # what is the maximum context length for predictions?
+max_iters = 3000
+eval_interval = 300
+learning_rate = 1e-2
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+eval_iters = 200
+# ------------
+
+
+torch.manual_seed(1337)
 
 # read it in to inspect it
 with open('input.txt', 'r', encoding='utf-8') as f:
     text = f.read()
-print('length of dataset in characters:', len(text))
-# taking a look at first 1000 characters
-print(text[:1000])
 
 # here are all the unique characters that occur in this text
 chars = sorted(list(set(text)))
 vocab_size = len(chars)
-print(''.join(chars))
-print(vocab_size)
-
 # this above is our vocabulary
-
 # next we would like to create strategy to tokenize the input text, converting text to sequence of integers
 # as this is a character based language model we will be simply turning characters into integers
 # create mapping from characters to integers
@@ -32,41 +32,18 @@ itos = {i: ch for i, ch in enumerate(chars)}
 encode = lambda s: [stoi[c] for c in s]  # encoder: take string and output list of integers
 decode = lambda l: ''.join([itos[i] for i in l])  # decoder: take a list of ints and outputs a string
 
-print(encode("Hii There"))
-print(decode(encode("Hii There")))
-
 # now let's encode the entire text dataset and store it into a torch.tensor
-
-import torch  # we use pytorch
-
+# we use pytorch
 data = torch.tensor(encode(text), dtype=torch.long)
-print(data.shape, data.dtype)
-print(data[:1000])  # the 1000 characters we looked at earlier will to the gpt look like this
-
 # let's now split up the data into train and validation sets
 n = int(0.9 * len(data))  # first 90% is for training and the final 10% is for validation
 train_data = data[:n]
 val_data = data[n:]
 
+
 # we don't feed all the text into transformer at once, computationally expensive & prohibitive
 # instead when training a transformer on these datasets we only work with chunks of the dataset
-# we sample ramdom chunks from the training set and train them chunks at a time
-
-block_size = 8
-train_data[:block_size + 1]
-
-x = train_data[:block_size]
-y = train_data[1:block_size + 1]
-for t in range(block_size):
-    context = x[:t + 1]
-    target = y[t]
-    print(f"when input is {context} the target: {target}")
-
-# batch dimension
-torch.manual_seed(1337)
-batch_size = 4  # how many independent sequences will we process in parallel?
-block_size = 8  # what is the maximum context length for predictions?
-
+# we sample random chunks from the training set and train them chunks at a time
 
 def get_batch(split):
     # generate a small batch of data of inputs x and y
@@ -77,35 +54,28 @@ def get_batch(split):
     return x, y
 
 
-xb, yb = get_batch('train')
-print('inputs:')
-print(xb.shape)
-print(xb)
-print('targets:')
-print(yb.shape)
-print(yb)
+@torch.no_grad()
+def estimate_loss():
+    out = {}
+    model.eval()
+    for split in ['train', 'val']:
+        losses = torch.zeros(eval_iters)
+        for k in range(eval_iters):
+            X, Y = get_batch(split)
+            logits, loss = model(X, Y)
+            losses[k] = loss.item()
+        out[split] = losses.mean()
+    model.train()
+    return out
 
-print('----')
-
-for b in range(batch_size):  # batch dimension
-    for t in range(block_size):  # time dimension
-        contet = xb[b, :t + 1]
-        target = yb[b, t]
-        print(f"when input is {contet.tolist()} the target: {target}")
-
-print(xb)  # our input to the transformer
 
 # now that the batch of input is done that we want to feed into a transformer
 # we can now feed the data into neural networks - simplest one bigram language model
 # importing pytorch NN module for reproducibility
-import torch
-import torch.nn as nn
-from torch.nn import functional as F
-
-torch.manual_seed(1337)
 
 
-class BigramLanguageModel(nn.Module):  # creating a bigram language model which is class of nn.module
+# super simple bigram model
+class BigramLanguageModel(nn.Module):
 
     def __init__(self, vocab_size):
         super().__init__()
@@ -143,9 +113,28 @@ class BigramLanguageModel(nn.Module):  # creating a bigram language model which 
         return idx
 
 
-m = BigramLanguageModel(vocab_size)  # calling the model
-logits, loss = m(xb, yb)  # passing in the inputs and the targets
-print(logits.shape)
-print(loss)
+model = BigramLanguageModel(vocab_size)
+m = model.to(device)
 
-print(decode(m.generate(idx=torch.zeros((1, 1), dtype=torch.long), max_new_tokens=100)[0].tolist()))
+# create a PyTorch optimizer
+optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
+
+for iter in range(max_iters):
+
+    # every once in a while evaluate the loss on train and val sets
+    if iter % eval_interval == 0:
+        losses = estimate_loss()
+        print(f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
+
+    # sample a batch of data
+    xb, yb = get_batch('train')
+
+    # evaluate the loss
+    logits, loss = model(xb, yb)
+    optimizer.zero_grad(set_to_none=True)
+    loss.backward()
+    optimizer.step()
+
+# generate from the model
+context = torch.zeros((1, 1), dtype=torch.long, device=device)
+print(decode(m.generate(context, max_new_tokens=500)[0].tolist()))
